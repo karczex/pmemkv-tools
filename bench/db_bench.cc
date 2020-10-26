@@ -16,6 +16,9 @@
 #include <cstdlib>
 #include <memory>
 #include <chrono>
+#include <vector>
+#include <string>
+#include <iostream>
 
 #include "leveldb/env.h"
 #include "testutil.h"
@@ -172,6 +175,64 @@ enum OperationType : unsigned char {
     kUpdate,
 };
 
+
+class BenchmarkLogger {
+protected:
+	struct benchmark_result {
+		std::string name;
+		std::string micros_per_op;
+		std::string ops_per_sec;
+		std::string throughput;
+	        std::string other_data;
+	};
+	std::vector<benchmark_result> results;
+
+public:
+	virtual void display() = 0;
+	void report(std::string name, float micros_per_op, float ops_per_sec, float throughput,
+			std::string other_data)
+	{
+		results.push_back({name, std::to_string(micros_per_op),
+				 std::to_string(ops_per_sec), std::to_string(throughput), other_data});
+	}
+
+};
+
+class csvLogger : public BenchmarkLogger
+{
+public:
+	
+	void display()
+	{
+		std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data" << std::endl;
+		for( auto &result : results)
+	        {
+			std::cout << result.name << "," << result.micros_per_op << "," <<
+				result.ops_per_sec << "," << result.throughput
+			       	<< "," << result.other_data << std::endl;
+			
+		}
+	}
+};
+
+class HumanReadableLogger : public BenchmarkLogger
+{
+	void display()
+        {
+
+	  for( auto &result : results)
+	  {
+	       fprintf(stdout, "%-12s : %11.3f micros/op %.0f ops/sec;%s[MB/s]%s\n",
+	       result.name.c_str(),
+	       result.micros_per_op.c_str(),
+	       result.ops_per_sec.c_str(),
+	       result.throughput.c_str(),
+	       result.other_data.c_str());
+	  }
+       }
+};
+
+
 class Stats {
 private:
     double start_;
@@ -186,7 +247,7 @@ private:
     bool exclude_from_merge_;
 
 public:
-    Stats() { Start(); }
+    Stats() {  Start(); }
 
     void Start() {
         next_report_ = 100;
@@ -258,10 +319,39 @@ public:
         bytes_ += n;
     }
 
-    void Report(const Slice &name) {
+    float get_micros_per_op()
+    {
         // Pretend at least one op was done in case we are running a benchmark
         // that does not call FinishedSingleOp().
         if (done_ < 1) done_ = 1;
+	return seconds_ * 1e6 / done_;
+    }
+
+    float get_ops_per_sec()
+    {
+        // Pretend at least one op was done in case we are running a benchmark
+        // that does not call FinishedSingleOp().
+        if (done_ < 1) done_ = 1;
+        double elapsed = (finish_ - start_) * 1e-6;
+
+        return done_ / elapsed;
+    }
+
+    float get_throughput()
+    {
+        // Rate and ops/sec is computed on actual elapsed time, not the sum of per-thread
+        // elapsed times.
+        double elapsed = (finish_ - start_) * 1e-6;
+        return (bytes_ / 1048576.0) / elapsed;
+    }
+
+    std::string get_extra_data()
+    {
+	return message_;
+    }
+
+
+    void csvReport(const Slice &name) {
 
         // Rate and ops/sec is computed on actual elapsed time, not the sum of per-thread
         // elapsed times.
@@ -274,18 +364,12 @@ public:
             extra = rate;
         }
         AppendWithSpace(&extra, message_);
-
-        fprintf(stdout, "%-12s : %11.3f micros/op %.0f ops/sec;%s%s\n",
-                name.ToString().c_str(),
-                seconds_ * 1e6 / done_,
-                done_ / elapsed,
-                (extra.empty() ? "" : " "),
-                extra.c_str());
-        if (FLAGS_histogram) {
+	if (FLAGS_histogram) {
             fprintf(stdout, "Microseconds per op:\n%s\n", hist_.ToString().c_str());
         }
         fflush(stdout);
     }
+ 
 };
 
 // State shared by all concurrent executions of the same benchmark.
@@ -367,6 +451,7 @@ private:
     int key_size_;
     int reads_;
     int64_t readwrites_;
+    BenchmarkLogger &logger;
 
     void PrintHeader() {
         PrintEnvironment();
@@ -427,17 +512,19 @@ private:
     }
 
 public:
-    Benchmark()
+    Benchmark(BenchmarkLogger &logger)
             :
             kv_(NULL),
             num_(FLAGS_num),
             value_size_(FLAGS_value_size),
             key_size_(FLAGS_key_size),
             reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
-            readwrites_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads) {
+            readwrites_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
+	    logger(logger) {
     }
 
     ~Benchmark() {
+	logger.display();
         delete kv_;
     }
 
@@ -465,7 +552,6 @@ public:
 
     void Run() {
         PrintHeader();
-
         const char *benchmarks = FLAGS_benchmarks;
         while (benchmarks != NULL) {
             const char *sep = strchr(benchmarks, ',');
@@ -525,7 +611,7 @@ public:
                 if (FLAGS_db_size_in_gb > 0) {
                     auto start = g_env->NowMicros();
                     std::remove(FLAGS_db);
-                    fprintf(stdout, "%-12s : %11.3f millis/op;\n", "removed", ((g_env->NowMicros() - start) * 1e-3));
+//                    fprintf(stdout, "%-12s : %11.3f millis/op;\n", "removed", ((g_env->NowMicros() - start) * 1e-3));
                 }
             }
 
@@ -609,7 +695,11 @@ private:
         for (int i = 1; i < n; i++) {
             arg[0].thread->stats.Merge(arg[i].thread->stats);
         }
-        arg[0].thread->stats.Report(name);
+	auto thread_stats = arg[0].thread->stats;
+	logger.report(name.ToString(), thread_stats.get_micros_per_op(), thread_stats.get_ops_per_sec(),
+		thread_stats.get_throughput(),
+		      thread_stats.get_extra_data());
+        //arg[0].thread->stats.csvReport(name);
 
         for (int i = 0; i < n; i++) {
             delete arg[i].thread;
@@ -652,8 +742,8 @@ private:
             exit(-42);
         }
 
-        fprintf(stdout, "%-12s : %11.3f millis/op;\n", "open", ((g_env->NowMicros() - start) * 1e-3));
-    }
+//		fprintf(stdout, "%-12s : %11.3f millis/op;\n", "open", ((g_env->NowMicros() - start) * 1e-3));
+	}
 
     void DoWrite(ThreadState *thread, bool seq) {
         if (num_ != FLAGS_num) {
@@ -850,6 +940,11 @@ private:
     }
 };
 
+
+#define CSV 1
+
+static int FLAGS_logger = 0;
+
 int main(int argc, char **argv) {
     // Print usage statement if necessary
     if (argc != 1) {
@@ -860,7 +955,6 @@ int main(int argc, char **argv) {
             exit(1);
         }
     }
-
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
         int n;
@@ -887,6 +981,8 @@ int main(int argc, char **argv) {
             FLAGS_db = argv[i] + 5;
         } else if (sscanf(argv[i], "--db_size_in_gb=%d%c", &n, &junk) == 1) {
             FLAGS_db_size_in_gb = n;
+        } else if (sscanf(argv[i], "--csv_output%c", &junk) != 0) {
+		FLAGS_logger = CSV;
         } else {
             fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
             exit(1);
@@ -895,7 +991,18 @@ int main(int argc, char **argv) {
 
     // Run benchmark against default environment
     g_env = leveldb::Env::Default();
-    Benchmark benchmark;
-    benchmark.Run();
+    if(FLAGS_logger != CSV)
+    {
+	auto logger = HumanReadableLogger();
+	auto benchmark = Benchmark(logger);
+	benchmark.Run();
+    }
+     else
+     {
+	auto logger = csvLogger();
+	auto benchmark = Benchmark(logger);
+	 benchmark.Run();
+     }
+
     return 0;
 }
