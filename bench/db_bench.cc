@@ -184,24 +184,28 @@ protected:
 		std::string ops_per_sec;
 		std::string throughput;
 	        std::string other_data;
+		std::string histogram;
 	};
+	
 	std::vector<benchmark_result> results;
 
 public:
+	bool display_histogram = false;
 	virtual void display() = 0;
+
 	void report(std::string name, float micros_per_op, float ops_per_sec, float throughput,
-			std::string other_data)
+			std::string other_data, Histogram histogram)
 	{
 		results.push_back({name, std::to_string(micros_per_op),
-				 std::to_string(ops_per_sec), std::to_string(throughput), other_data});
+				 std::to_string(ops_per_sec), std::to_string(throughput), other_data,
+				 histogram.ToString()});
 	}
-
 };
 
 class csvLogger : public BenchmarkLogger
 {
 public:
-	
+//	using display_histogram;	
 	void display()
 	{
 		std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data" << std::endl;
@@ -210,24 +214,36 @@ public:
 			std::cout << result.name << "," << result.micros_per_op << "," <<
 				result.ops_per_sec << "," << result.throughput
 			       	<< "," << result.other_data << std::endl;
-			
+		}
+		if(display_histogram)
+		{
+			for( auto &result : results)
+			{
+				std::cout << result.name << std::endl << result.histogram << std::endl;
+			}
 		}
 	}
 };
 
 class HumanReadableLogger : public BenchmarkLogger
 {
+
+//	using display_histogram;
 	void display()
         {
 
 	  for( auto &result : results)
 	  {
-	       fprintf(stdout, "%-12s : %11.3f micros/op %.0f ops/sec;%s[MB/s]%s\n",
+	       fprintf(stdout, "%-12s : %s micros/op \t %s ops/sec; \t %s[MB/s] %s\n",
 	       result.name.c_str(),
 	       result.micros_per_op.c_str(),
 	       result.ops_per_sec.c_str(),
 	       result.throughput.c_str(),
 	       result.other_data.c_str());
+	       if(display_histogram)
+	       {
+		       std::cout << result.histogram << std::endl;
+	       }
 	  }
        }
 };
@@ -290,16 +306,14 @@ public:
     void SetExcludeFromMerge() { exclude_from_merge_ = true; }
 
     void FinishedSingleOp() {
-        if (FLAGS_histogram) {
-            double now = g_env->NowMicros();
-            double micros = now - last_op_finish_;
-            hist_.Add(micros);
-            if (micros > 20000) {
-                fprintf(stderr, "long op: %.1f micros%30s\r", micros, "");
-                fflush(stderr);
-            }
-            last_op_finish_ = now;
+        double now = g_env->NowMicros();
+        double micros = now - last_op_finish_;
+        hist_.Add(micros);
+        if (micros > 20000) {
+            fprintf(stderr, "long op: %.1f micros%30s\r", micros, "");
+            fflush(stderr);
         }
+        last_op_finish_ = now;
 
         done_++;
         if (done_ >= next_report_) {
@@ -350,26 +364,10 @@ public:
 	return message_;
     }
 
-
-    void csvReport(const Slice &name) {
-
-        // Rate and ops/sec is computed on actual elapsed time, not the sum of per-thread
-        // elapsed times.
-        double elapsed = (finish_ - start_) * 1e-6;
-        std::string extra;
-        if (bytes_ > 0) {
-            char rate[100];
-            snprintf(rate, sizeof(rate), "%6.1f MB/s",
-                     (bytes_ / 1048576.0) / elapsed);
-            extra = rate;
-        }
-        AppendWithSpace(&extra, message_);
-	if (FLAGS_histogram) {
-            fprintf(stdout, "Microseconds per op:\n%s\n", hist_.ToString().c_str());
-        }
-        fflush(stdout);
-    }
- 
+   Histogram get_histogram()
+   {
+	return hist_;
+   }
 };
 
 // State shared by all concurrent executions of the same benchmark.
@@ -698,8 +696,7 @@ private:
 	auto thread_stats = arg[0].thread->stats;
 	logger.report(name.ToString(), thread_stats.get_micros_per_op(), thread_stats.get_ops_per_sec(),
 		thread_stats.get_throughput(),
-		      thread_stats.get_extra_data());
-        //arg[0].thread->stats.csvReport(name);
+		      thread_stats.get_extra_data(), thread_stats.get_histogram());
 
         for (int i = 0; i < n; i++) {
             delete arg[i].thread;
@@ -994,14 +991,18 @@ int main(int argc, char **argv) {
     if(FLAGS_logger != CSV)
     {
 	auto logger = HumanReadableLogger();
+	if(FLAGS_histogram)
+		logger.display_histogram = true;
 	auto benchmark = Benchmark(logger);
 	benchmark.Run();
     }
      else
      {
 	auto logger = csvLogger();
+	if(FLAGS_histogram)
+		logger.display_histogram = true;
 	auto benchmark = Benchmark(logger);
-	 benchmark.Run();
+	benchmark.Run();
      }
 
     return 0;
