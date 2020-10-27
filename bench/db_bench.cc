@@ -19,6 +19,8 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <iomanip>
+#include <map>
 
 #include "leveldb/env.h"
 #include "testutil.h"
@@ -187,6 +189,8 @@ protected:
 		std::string histogram;
 	};
 	
+	std::map<std::string, std::string> environ;
+	
 	std::vector<benchmark_result> results;
 
 public:
@@ -200,20 +204,45 @@ public:
 				 std::to_string(ops_per_sec), std::to_string(throughput), other_data,
 				 histogram.ToString()});
 	}
+
+	void add_environ(std::string name, std::string value)
+	{
+		environ[name] = value;
+	}
+	
+	void add_environ(std::string name, const char* value)
+	{
+		add_environ(name, std::string(value));
+	}
+
+	template <typename T>
+	void add_environ(std::string name, T value)
+	{
+		environ[name] = std::to_string(value);
+	}
 };
 
 class csvLogger : public BenchmarkLogger
 {
 public:
-//	using display_histogram;	
 	void display()
 	{
-		std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data" << std::endl;
+		std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data,";
+		for( auto &env_param : environ)
+		{
+			std::cout << env_param.first <<",";
+		}
+		std::cout << std::endl;
 		for( auto &result : results)
 	        {
 			std::cout << result.name << "," << result.micros_per_op << "," <<
 				result.ops_per_sec << "," << result.throughput
-			       	<< "," << result.other_data << std::endl;
+			       	<< "," << result.other_data << ",";
+			for( auto &env_param : environ)
+			{
+				std::cout << env_param.second<<",";
+			}
+			std::cout << std::endl;
 		}
 		if(display_histogram)
 		{
@@ -228,10 +257,13 @@ public:
 class HumanReadableLogger : public BenchmarkLogger
 {
 
-//	using display_histogram;
 	void display()
         {
-
+	  for( auto &env_param : environ)
+	  {
+		std::cout<< std::left << std::setw(25) << env_param.first << " : " << std::setw(25) << env_param.second <<std::endl;
+	  }
+	  std::cout << "------------------------------------------------" <<  std::endl;
 	  for( auto &result : results)
 	  {
 	       fprintf(stdout, "%-12s : %s micros/op \t %s ops/sec; \t %s[MB/s] %s\n",
@@ -453,16 +485,15 @@ private:
 
     void PrintHeader() {
         PrintEnvironment();
-        fprintf(stdout, "Path:       %s\n", FLAGS_db);
-        fprintf(stdout, "Engine:     %s\n", FLAGS_engine);
-        fprintf(stdout, "Keys:       %d bytes each\n", FLAGS_key_size);
-        fprintf(stdout, "Values:     %d bytes each\n", FLAGS_value_size);
-        fprintf(stdout, "Entries:    %d\n", num_);
-        fprintf(stdout, "RawSize:    %.1f MB (estimated)\n",
+        logger.add_environ("Path", FLAGS_db);
+        logger.add_environ("Engine", FLAGS_engine);
+        logger.add_environ( "Keys [bytes each]", FLAGS_key_size);
+        logger.add_environ("Values [bytes each]", FLAGS_value_size);
+        logger.add_environ("Entries", num_);
+        logger.add_environ("RawSize [MB (estimated]",
                 ((static_cast<int64_t>(FLAGS_key_size + FLAGS_value_size) * num_)
                  / 1048576.0));
         PrintWarnings();
-        fprintf(stdout, "------------------------------------------------\n");
     }
 
     void PrintWarnings() {
@@ -480,7 +511,7 @@ private:
     void PrintEnvironment() {
 #if defined(__linux)
         time_t now = time(NULL);
-        fprintf(stdout, "Date:       %s", ctime(&now));  // ctime() adds newline
+//        logger.add_environ( "Date:", ctime(&now));  // ctime() adds newline
 
         FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
         if (cpuinfo != NULL) {
@@ -503,8 +534,9 @@ private:
                 }
             }
             fclose(cpuinfo);
-            fprintf(stdout, "CPU:        %d * %s\n", num_cpus, cpu_type.c_str());
-            fprintf(stdout, "CPUCache:   %s\n", cache_size.c_str());
+            logger.add_environ("CPU", std::to_string(num_cpus));
+            logger.add_environ("CPU model", cpu_type);
+            logger.add_environ("CPUCache", cache_size);
         }
 #endif
     }
@@ -988,22 +1020,21 @@ int main(int argc, char **argv) {
 
     // Run benchmark against default environment
     g_env = leveldb::Env::Default();
+
+    BenchmarkLogger *logger;
     if(FLAGS_logger != CSV)
     {
-	auto logger = HumanReadableLogger();
-	if(FLAGS_histogram)
-		logger.display_histogram = true;
-	auto benchmark = Benchmark(logger);
-	benchmark.Run();
+	logger = new HumanReadableLogger();
     }
      else
      {
-	auto logger = csvLogger();
-	if(FLAGS_histogram)
-		logger.display_histogram = true;
-	auto benchmark = Benchmark(logger);
-	benchmark.Run();
+	logger = new csvLogger();
      }
-
+	if(FLAGS_histogram)
+	{
+		logger->display_histogram = true;
+	}
+    auto benchmark = Benchmark(*logger);
+    benchmark.Run();
     return 0;
 }
