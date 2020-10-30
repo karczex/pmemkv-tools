@@ -180,103 +180,106 @@ enum OperationType : unsigned char {
 
 class BenchmarkLogger {
 protected:
-	struct benchmark_result {
-		std::string name;
-		std::string micros_per_op;
-		std::string ops_per_sec;
-		std::string throughput;
-	        std::string other_data;
-		std::string histogram;
-	};
-	
-	std::map<std::string, std::string> environ;
-	
-	std::vector<benchmark_result> results;
+    struct benchmark_result {
+        std::string name;
+        std::string micros_per_op;
+        std::string ops_per_sec;
+        std::string throughput;
+            std::string other_data;
+        std::string histogram;
+    };
+
+    std::map<std::string, std::string> environ;
+
+    std::vector<benchmark_result> results;
 
 public:
-	bool display_histogram = false;
-	virtual void display() = 0;
+    bool display_histogram = false;
+    virtual void display() = 0;
 
-	void report(std::string name, float micros_per_op, float ops_per_sec, float throughput,
-			std::string other_data, Histogram histogram)
-	{
-		results.push_back({name, std::to_string(micros_per_op),
-				 std::to_string(ops_per_sec), std::to_string(throughput), other_data,
-				 histogram.ToString()});
-	}
+    void report(std::string name, float micros_per_op, float ops_per_sec, float throughput,
+            std::string other_data, Histogram histogram)
+    {
+        results.push_back({name, std::to_string(micros_per_op),
+                 std::to_string(ops_per_sec), std::to_string(throughput), other_data,
+                 histogram.ToString()});
+    }
 
-	void add_environ(std::string name, std::string value)
-	{
-		environ[name] = value;
-	}
-	
-	void add_environ(std::string name, const char* value)
-	{
-		add_environ(name, std::string(value));
-	}
+    void add_environ(std::string name, std::string value)
+    {
+        environ[name] = value;
+    }
 
-	template <typename T>
-	void add_environ(std::string name, T value)
-	{
-		environ[name] = std::to_string(value);
-	}
+    void add_environ(std::string name, const char* value)
+    {
+        add_environ(name, std::string(value));
+    }
+
+    void add_environ(std::string name, char* value)
+    {
+        add_environ(name, std::string(value));
+    }
+
+    template <typename T>
+    void add_environ(std::string name, T value)
+    {
+        add_environ(name, std::to_string(value));
+    }
 };
 
 class csvLogger : public BenchmarkLogger
 {
 public:
-	void display()
-	{
-		std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data,";
-		for( auto &env_param : environ)
-		{
-			std::cout << env_param.first <<",";
-		}
-		std::cout << std::endl;
-		for( auto &result : results)
-	        {
-			std::cout << result.name << "," << result.micros_per_op << "," <<
-				result.ops_per_sec << "," << result.throughput
-			       	<< "," << result.other_data << ",";
-			for( auto &env_param : environ)
-			{
-				std::cout << env_param.second<<",";
-			}
-			std::cout << std::endl;
-		}
-		if(display_histogram)
-		{
-			for( auto &result : results)
-			{
-				std::cout << result.name << std::endl << result.histogram << std::endl;
-			}
-		}
-	}
+    void display()
+    {
+        std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data,";
+        for( auto &env_param : environ)
+        {
+            std::cout << env_param.first <<",";
+        }
+        std::cout << std::endl;
+        for( auto &result : results)
+            {
+            std::cout << result.name << "," << result.micros_per_op << "," <<
+                result.ops_per_sec << "," << result.throughput
+                    << "," << result.other_data << ",";
+            for( auto &env_param : environ)
+            {
+                std::cout << env_param.second<<",";
+            }
+            std::cout << std::endl;
+        }
+        if(display_histogram)
+        {
+            for( auto &result : results)
+            {
+                std::cout << result.name << std::endl << result.histogram << std::endl;
+            }
+        }
+    }
 };
 
 class HumanReadableLogger : public BenchmarkLogger
 {
-
-	void display()
+    void display()
         {
-	  for( auto &env_param : environ)
-	  {
-		std::cout<< std::left << std::setw(25) << env_param.first << " : " << std::setw(25) << env_param.second <<std::endl;
-	  }
-	  std::cout << "------------------------------------------------" <<  std::endl;
-	  for( auto &result : results)
-	  {
-	       fprintf(stdout, "%-12s : %s micros/op \t %s ops/sec; \t %s[MB/s] %s\n",
-	       result.name.c_str(),
-	       result.micros_per_op.c_str(),
-	       result.ops_per_sec.c_str(),
-	       result.throughput.c_str(),
-	       result.other_data.c_str());
-	       if(display_histogram)
-	       {
-		       std::cout << result.histogram << std::endl;
-	       }
-	  }
+      for( auto &env_param : environ)
+      {
+        std::cout<< std::left << std::setw(25) << env_param.first << " : " << std::setw(25) << env_param.second <<std::endl;
+      }
+      std::cout << "------------------------------------------------" <<  std::endl;
+      for( auto &result : results)
+      {
+           std::cout << std::left << std::setw(12) << result.name << ": " <<
+               std::setw(25) << result.micros_per_op << "micros/op" <<
+               std::setw(25) << result.ops_per_sec << "ops/sec;" <<
+               std::setw(25) << result.throughput << "[MB/s]" <<
+               result.other_data << std::endl;
+           if(display_histogram)
+           {
+               std::cout << result.histogram << std::endl;
+           }
+      }
        }
 };
 
@@ -370,7 +373,7 @@ public:
         // Pretend at least one op was done in case we are running a benchmark
         // that does not call FinishedSingleOp().
         if (done_ < 1) done_ = 1;
-	return seconds_ * 1e6 / done_;
+    return seconds_ * 1e6 / done_;
     }
 
     float get_ops_per_sec()
@@ -393,12 +396,12 @@ public:
 
     std::string get_extra_data()
     {
-	return message_;
+    return message_;
     }
 
    Histogram get_histogram()
    {
-	return hist_;
+    return hist_;
    }
 };
 
@@ -511,7 +514,7 @@ private:
     void PrintEnvironment() {
 #if defined(__linux)
         time_t now = time(NULL);
-//        logger.add_environ( "Date:", ctime(&now));  // ctime() adds newline
+        logger.add_environ( "Date:", ctime(&now));  // ctime() adds newline
 
         FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
         if (cpuinfo != NULL) {
@@ -550,11 +553,11 @@ public:
             key_size_(FLAGS_key_size),
             reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
             readwrites_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
-	    logger(logger) {
+            logger(logger) {
     }
 
     ~Benchmark() {
-	logger.display();
+        logger.display();
         delete kv_;
     }
 
@@ -725,10 +728,10 @@ private:
         for (int i = 1; i < n; i++) {
             arg[0].thread->stats.Merge(arg[i].thread->stats);
         }
-	auto thread_stats = arg[0].thread->stats;
-	logger.report(name.ToString(), thread_stats.get_micros_per_op(), thread_stats.get_ops_per_sec(),
-		thread_stats.get_throughput(),
-		      thread_stats.get_extra_data(), thread_stats.get_histogram());
+    auto thread_stats = arg[0].thread->stats;
+    logger.report(name.ToString(), thread_stats.get_micros_per_op(), thread_stats.get_ops_per_sec(),
+        thread_stats.get_throughput(),
+              thread_stats.get_extra_data(), thread_stats.get_histogram());
 
         for (int i = 0; i < n; i++) {
             delete arg[i].thread;
@@ -771,8 +774,8 @@ private:
             exit(-42);
         }
 
-//		fprintf(stdout, "%-12s : %11.3f millis/op;\n", "open", ((g_env->NowMicros() - start) * 1e-3));
-	}
+//      fprintf(stdout, "%-12s : %11.3f millis/op;\n", "open", ((g_env->NowMicros() - start) * 1e-3));
+    }
 
     void DoWrite(ThreadState *thread, bool seq) {
         if (num_ != FLAGS_num) {
@@ -1011,7 +1014,7 @@ int main(int argc, char **argv) {
         } else if (sscanf(argv[i], "--db_size_in_gb=%d%c", &n, &junk) == 1) {
             FLAGS_db_size_in_gb = n;
         } else if (sscanf(argv[i], "--csv_output%c", &junk) != 0) {
-		FLAGS_logger = CSV;
+        FLAGS_logger = CSV;
         } else {
             fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
             exit(1);
@@ -1024,16 +1027,16 @@ int main(int argc, char **argv) {
     BenchmarkLogger *logger;
     if(FLAGS_logger != CSV)
     {
-	logger = new HumanReadableLogger();
+    logger = new HumanReadableLogger();
     }
      else
      {
-	logger = new csvLogger();
+    logger = new csvLogger();
      }
-	if(FLAGS_histogram)
-	{
-		logger->display_histogram = true;
-	}
+    if(FLAGS_histogram)
+    {
+        logger->display_histogram = true;
+    }
     auto benchmark = Benchmark(*logger);
     benchmark.Run();
     return 0;
