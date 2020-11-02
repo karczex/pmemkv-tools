@@ -232,22 +232,23 @@ class csvLogger : public BenchmarkLogger
 public:
     void display()
     {
-        std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data,";
+        std::cout <<  "benchmark,micros/op,osp/sec,throughput[MB/s],other data";
         for( auto &env_param : environ)
         {
-            std::cout << env_param.first <<",";
+            std::cout << "," << env_param.first;
         }
         std::cout << std::endl;
         for( auto &result : results)
             {
             std::cout << result.name << "," << result.micros_per_op << "," <<
                 result.ops_per_sec << "," << result.throughput
-                    << "," << result.other_data << ",";
+                    << "," << result.other_data;
             for( auto &env_param : environ)
             {
-                std::cout << env_param.second<<",";
-            }
-            std::cout << std::endl;
+                std::cout << "," << env_param.second;
+	    }
+
+            std::cout << "/r/n";
         }
         if(display_histogram)
         {
@@ -493,7 +494,7 @@ private:
         logger.add_environ( "Keys [bytes each]", FLAGS_key_size);
         logger.add_environ("Values [bytes each]", FLAGS_value_size);
         logger.add_environ("Entries", num_);
-        logger.add_environ("RawSize [MB (estimated]",
+        logger.add_environ("RawSize [MB (estimated)]",
                 ((static_cast<int64_t>(FLAGS_key_size + FLAGS_value_size) * num_)
                  / 1048576.0));
         PrintWarnings();
