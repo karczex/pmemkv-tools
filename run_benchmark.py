@@ -6,6 +6,7 @@ import subprocess
 import csv
 import glob
 
+from pymongo import MongoClient
 
 class Repository:
     def __init__(self, config: dict):
@@ -104,6 +105,13 @@ class Pmemkv:
             raise e
         pass
 
+def upload_to_mongodb(address, port, username, password, db_name, data):
+    client = MongoClient(address, int(port), username=username, password=password)
+    with client:
+        db = client["karczex_test"]
+        column = db["test_data"]
+        column.insert_many(data)
+
 
 def print_results(results_dict):
     print(json.dumps(results_dict, indent=4, sort_keys=True))
@@ -116,6 +124,12 @@ if __name__ == "__main__":
     parser.add_argument("config_path", help="Path to json config file")
     args = parser.parse_args()
     print(args.config_path)
+
+    db_address = os.environ["MONGO_ADDRESS"]
+    db_port = os.environ["MONGO_PORT"]
+    db_user = os.environ["MONGO_USER"]
+    db_passwd = os.environ["MONGO_PASSWORD"]
+    db_name = "karczex_test"
 
     config = None
     with open(args.config_path) as config_path:
@@ -134,4 +148,5 @@ if __name__ == "__main__":
     benchmark.build()
     benchmark.run()
     benchmark_results = benchmark.get_results()
-    print_results(benchmark_results)
+    print(benchmark_results)
+    upload_to_mongodb(db_address, db_port, db_user, db_passwd, db_name, benchmark_results )
