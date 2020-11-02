@@ -514,8 +514,7 @@ private:
     void PrintEnvironment() {
 #if defined(__linux)
         time_t now = time(NULL);
-        logger.add_environ( "Date:", ctime(&now));  // ctime() adds newline
-
+        logger.add_environ( "Date:", std::string(ctime(&now), 24));
         FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
         if (cpuinfo != NULL) {
             char line[1000];
