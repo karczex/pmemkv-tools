@@ -110,7 +110,7 @@ def upload_to_mongodb(address, port, username, password, db_name, data):
     with client:
         db = client["karczex_test"]
         column = db["test_data"]
-        column.insert_many(data)
+        column.insert_one(data)
 
 
 def print_results(results_dict):
@@ -148,5 +148,8 @@ if __name__ == "__main__":
     benchmark.build()
     benchmark.run()
     benchmark_results = benchmark.get_results()
-    print(benchmark_results)
-    upload_to_mongodb(db_address, db_port, db_user, db_passwd, db_name, benchmark_results )
+
+    raport = {key: config[key] for key in config}
+    raport["results"] = benchmark_results
+
+    upload_to_mongodb(db_address, db_port, db_user, db_passwd, db_name, raport)
