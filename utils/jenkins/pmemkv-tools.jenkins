@@ -9,7 +9,7 @@ libs = [:]
 currentBuild.displayName = "#$currentBuild.id $LABEL: $BRANCH - $TEST_TYPE, coverage: $COVERAGE"
 currentBuild.description = "$DESCRIPTION"
 
-PMEMKV_DIR='pmemkv'
+PMEMKV_DIR='pmemkv-tools'
 
 /* Send report summary via email. */
 def send_mail(attachments, msg) {
@@ -116,41 +116,16 @@ pipeline {
 						/* Specified Java version must be used for bindings */
 						def JAVA_HOME="JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64"
 						libs.api.echo_header("Running test type: ${params.TEST_TYPE}")
-						dir("${PMEMKV_PATH}/utils/docker")
+						dir("${PMEMKV_PATH}")
 						{
 							switch (params.TEST_TYPE) {
-								case 'normal':
-									libs.api.echo_header("Test options: ${params.TEST_OPTIONS}")
-									params.TEST_OPTIONS.split().each { build ->
-										stage("${build}") {
-											catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-										libs.api.run_bash_script("""
-											${ENV_VAL}
-											./run-build.sh ${build}
-										""")
-										}
-										}
-									}
-									break;
-								case 'building':
-									libs.api.run_bash_script("""
-										${ENV_VAL}
-										./run-test-building.sh
-									""")
-									break;
-								case 'compatibility':
-									libs.api.run_bash_script("""
-										${ENV_VAL}
-										./run-compatibility.sh
-									""")
-									break;
 								case 'benchmarks':
 										params.TEST_OPTIONS.split().each { build ->
 										stage("${build}") {
 											catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
 										libs.api.run_bash_script("""
 											${ENV_VAL}
-											./run-benchmarks.sh ${build}
+											make run_bench
 										""")
 										}
 										}
@@ -178,14 +153,6 @@ pipeline {
 				libs.api.unset_jenkins_warning_on_dut()
 				libs.api.write_os_branch_repo(params.LABEL, params.BRANCH, params.REPO_URL)
 				libs.api.archive_output()
-				/* Make sure to uninstall pmemkv from the DUT. */
-				def PMEMKV_PATH="${WORKSPACE_DIR}/${PMEMKV_DIR}"
-				libs.api.run_bash_script("""
-							cd ${PMEMKV_PATH}/build || true
-							sudo make uninstall || true
-							sudo rm /usr/lib64/pkgconfig/libpmemkv.pc || true
-							sudo rm /usr/lib/x86_64-linux-gnu/pkgconfig/libpmemkv.pc || true
-						""")
 			}
 		}
 		success {

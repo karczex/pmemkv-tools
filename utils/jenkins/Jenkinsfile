@@ -90,7 +90,7 @@ def remote_definition(current_job_script_path) {
 				scm {
 					git {
 						remote {
-							url('https://github.com/pmem/pmemkv.git')
+							url('https://github.com/pmem/pmemkv-tools.git')
 							branch('${jenkins_files_branch_source}')
 							scriptPath('${current_job_script_path}')
 						}
@@ -107,7 +107,7 @@ environmental_variables = """
 			api_lib: "jenkins_files/utils/jenkins/lib/api.groovy",
 			lib_path: "jenkins_files/utils/jenkins/lib/",
 			scripts_path: "jenkins_files/utils/jenkins/scripts/",
-			jenkins_files_repo: "https://github.com/pmem/pmemkv.git",
+			jenkins_files_repo: "https://github.com/pmem/pmemkv-tools.git",
 			jenkins_files_branch: "*/${jenkins_files_branch_source}",
 			info_addr: "https://pmem-val-jenkins.pact.intel.com/"
 		)
@@ -127,8 +127,8 @@ triggers = '''
 '''
 
 node {
-	stage('pmemkv_linux'){
-        jobDsl scriptText: """pipelineJob("pmemkv_linux") {
+	stage('pmemkv-tools'){
+        jobDsl scriptText: """pipelineJob("pmemkv-tools") {
 			parameters {
 				${label_param}
 				${branch_param}
@@ -143,11 +143,11 @@ node {
 			${gitlab_connection}
 			${environmental_variables}
 			${triggers}
-			${remote_definition 'utils/jenkins/pmemkv_linux.jenkins'}
+			${remote_definition 'utils/jenkins/pmemkv-tools.jenkins'}
 		}"""
     }
-    stage('pmemkv_linux_matrix'){
-        jobDsl scriptText: """matrixJob("pmemkv_linux_matrix") {
+    stage('pmemkv-tools_matrix'){
+        jobDsl scriptText: """matrixJob("pmemkv-tools_matrix") {
         	parameters {
 				matrixCombinationsParam('COMBINATIONS', '', 'choose which combinations to run')
 				${branch_param}
@@ -165,7 +165,7 @@ node {
 		    }
 		    steps {
 		        downstreamParameterized {
-					trigger("pmemkv_linux") {
+					trigger("pmemkv-tools") {
 						parameters {
 							predefinedProp('COV', '\${COVERAGE}')
 							predefinedProp('TEST_TYPE', '\${TYPE}')
@@ -176,7 +176,7 @@ node {
 							predefinedProp('REPO_URL', '\${REPO_URL}')
 							predefinedProp('EMAIL_RECIPIENTS', '\${EMAIL_RECIPIENTS}')
 							predefinedProp('SEND_EMAIL', '\${SEND_RESULTS}')
-                            predefinedProp('DESCRIPTION', '\${DESCRIPTION}  #Triggered by pmemkv matrixJob #\${BUILD_NUMBER}   ->   \${JENKINS_URL}view/all/job/pmemkv_linux_matrix/\${BUILD_NUMBER}')
+                            predefinedProp('DESCRIPTION', '\${DESCRIPTION}  #Triggered by pmemkv matrixJob #\${BUILD_NUMBER}   ->   \${JENKINS_URL}view/all/job/pmemkv-tools_matrix/\${BUILD_NUMBER}')
 						}
 					block {
 						buildStepFailure('FAILURE')
