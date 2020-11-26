@@ -113,9 +113,9 @@ def remote_definition(current_job_script_path) {
 environmental_variables = """
 	environmentVariables {
 		envs(
-			api_lib: "jenkins_files/utils/jenkins/lib/api.groovy",
-			lib_path: "jenkins_files/utils/jenkins/lib/",
-			scripts_path: "jenkins_files/utils/jenkins/scripts/",
+			api_lib: "dev-utils-kit/jenkins/lib/api.groovy",
+			lib_path: "dev-utils-kit/jenkins/lib/",
+			scripts_path: "dev-utils-kit/jenkins/scripts/",
 			jenkins_files_repo: "https://github.com/pmem/pmemkv-tools.git",
 			jenkins_files_branch: "*/${jenkins_files_branch_source}",
 			info_addr: "https://pmem-val-jenkins.pact.intel.com/"
@@ -153,7 +153,7 @@ node {
 			${gitlab_connection}
 			${environmental_variables}
 			${triggers}
-			${remote_definition 'utils/jenkins/pmemkv-tools.jenkins'}
+			${remote_definition 'pmemkv-tools.jenkins'}
 		}"""
     }
     stage('pmemkv-tools_matrix'){
