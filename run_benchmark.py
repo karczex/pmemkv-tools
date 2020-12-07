@@ -163,12 +163,58 @@ def print_results(results_dict):
 
 
 def main():
+    help_msg = """
+Runs pmemkv-bench for pmemkv and libpmemobjcpp defined in configuration json
+
++-------------------------------------+
+|       run_benchmark.py              |
+|                                     |       +-----------------------+
+| +------------------------+          |       | libpmemobj+cpp        |
+| | libpmemobjcpp          |          |       | git repozitory        |
+| | +----------------------+ <----------------+                       |
+| | Downloads and builds   |          |       |                       |
+| | libpmemobj+cpp         |          |       +-----------------------+
+| | project                |          |
+| +------------------------+          |
+|                                     |
+|                                     |       +-----------------------+
+| +------------------------+          |       | pmemkv                |
+| | pmemkv                 |          |       | git repozitory        |
+| | +----------------------+ <----------------+                       |
+| | Downloads and builds   |          |       |                       |
+| | pmemk^ project         |          |       +-----------------------+
+| +------------------------+          |
+|                                     |
+|                                     |       +-----------------------+
+| +------------------------+          |       | pmemkv+tools          |
+| | pmemkk<|bench          |          |       | git repository        |
+| | +----------------------+ <----------------+                       |
+| | Runs benchmark and     |          |       |                       |
+| | uploads results to     |          |       +-----------------------+
+| | mongoDB                |          |
+| |                        |          |       --------------------------+
+| |                        +----------------->+ MongoDB instance        |
+| +------------------------+          |       | +-----------------------+
+|                                     |       | Collects benchmarks     |
+|                                     |       | results                 |
+|                                     |       +----------+--------------+
++-------------------------------------+                  |
+                                                         v
+                                              +----------+--------------+
+                                              |  MongoDB Charts         |
+                                              |  +----------------------+
+                                              |  Displays collected data|
+                                              +-------------------------+
+
+Environment variables for MongoDB client configuration:
+  MONGO_ADDRESS, MONGO_PORT, MONGO_USER, MONGO_PASSWORD and MONGO_DB_NAME
+"""
     # Setup loglevel
     LOGLEVEL = os.environ.get("LOGLEVEL") or "INFO"
     logging.basicConfig(level=LOGLEVEL)
 
     # Parse arguments
-    parser = argparse.ArgumentParser(description="Runs pmemkv_bench")
+    parser = argparse.ArgumentParser(description=help_msg, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("config_path", help="Path to json config file")
     args = parser.parse_args()
     logger.info(args.config_path)
