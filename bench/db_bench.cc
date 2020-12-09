@@ -174,14 +174,25 @@ enum OperationType : unsigned char {
 };
 
 
-class BenchmarkLogger {
-protected:
+class csvLogger{
+private:
 
 	std::map<std::string, std::map<std::string, std::string>> data_matrix;
 	std::map<std::string, std::string> global_data;
 	std::set<std::string> column_index;
 	std::string id_name = "benchmark";
-	std::map<std::string, Histogram> histograms;
+	std::map<std::string, std::string> histograms;
+
+	void combine_data()
+	{
+		for (auto &row : data_matrix)
+		{
+			for(auto &column: global_data)
+			{
+				insert(row.first, column.first, column.second);
+			}
+		}
+	}
 
 public:
 
@@ -220,7 +231,7 @@ public:
 
 	void insert(std::string name, Histogram histogram)
 	{
-		histograms[name] = histogram;
+		histograms[name] = histogram.ToString();
 	}
 
 	void print_histogram()
@@ -228,28 +239,10 @@ public:
 		std::cout << "------------------------------------------------" <<  std::endl;
 		for ( auto &histogram: histograms )
 		{
-			std::cout << histogram.first << std::endl <<  histogram.second.ToString() << std::endl;
+			std::cout << histogram.first << std::endl <<  histogram.second << std::endl;
 		}
 	}
 
-	virtual void print() = 0;
-};
-
-class csvLogger : public BenchmarkLogger {
-private:
-
-	void combine_data()
-	{
-		for (auto &row : data_matrix)
-		{
-			for(auto &column: global_data)
-			{
-				insert(row.first, column.first, column.second);
-			}
-		}
-	}
-
-public:
 	void print()
 	{
 		combine_data();
@@ -271,31 +264,6 @@ public:
 		}
 	}
 };
-
-class HumanReadableLogger : public BenchmarkLogger
-{
-    void print()
-    {
-	for (auto &env_param : global_data)
-	{
-		std::cout<< std::left << std::setw(25) << env_param.first << " : "
-			<< std::setw(25) << env_param.second <<std::endl;
-	}
-	std::cout << "------------------------------------------------" <<  std::endl;
-	for( auto &benchmark: data_matrix)
-        {
-               std::cout << std::left << std::setw(12) << benchmark.first << ": ";
-		for(auto &result: benchmark.second)
-		{
-
-			std::cout << result.second << " " << result.first << " ";
-		}
-		std::cout << std::endl;
-
-        }
-    }
-};
-
 
 class Stats {
 private:
@@ -499,7 +467,7 @@ private:
     int key_size_;
     int reads_;
     int64_t readwrites_;
-    BenchmarkLogger &logger;
+    csvLogger &logger;
     Slice name;
     int n;
     const char *engine;
@@ -565,7 +533,7 @@ private:
     }
 
 public:
-    Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, BenchmarkLogger &logger)
+    Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, csvLogger &logger)
             :
             kv_(kv),
             num_(FLAGS_num),
@@ -969,8 +937,6 @@ private:
     }
 };
 
-#define CSV 1
-
 int main(int argc, char **argv) {
     // Default list of comma-separated operations to run
     static const char *FLAGS_benchmarks =
@@ -1014,8 +980,6 @@ int main(int argc, char **argv) {
             FLAGS_db = argv[i] + 5;
         } else if (sscanf(argv[i], "--db_size_in_gb=%d%c", &n, &junk) == 1) {
             FLAGS_db_size_in_gb = n;
-        } else if (sscanf(argv[i], "--csv_output%c", &junk) != 0) {
-            FLAGS_logger = CSV;
         } else {
             fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
             exit(1);
@@ -1025,15 +989,7 @@ int main(int argc, char **argv) {
     // Run benchmark against default environment
     g_env = leveldb::Env::Default();
 
-    BenchmarkLogger *logger;
-    if(FLAGS_logger != CSV)
-    {
-        logger = new HumanReadableLogger();
-    }
-    else
-    {
-        logger = new csvLogger();
-    }
+    csvLogger *logger = new csvLogger;
 
     pmem::kv::db *kv = NULL;
     const char *benchmarks = FLAGS_benchmarks;
@@ -1060,6 +1016,6 @@ int main(int argc, char **argv) {
     {
         logger->print_histogram();
     }
-
+    delete logger;
     return 0;
 }
