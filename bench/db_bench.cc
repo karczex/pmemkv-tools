@@ -232,6 +232,14 @@ public:
 	void insert(std::string name, Histogram histogram)
 	{
 		histograms[name] = histogram.ToString();
+		std::vector<double> percentiles = {50, 75, 90, 99.9, 99.99};
+		for (double &percentile : percentiles)
+		{
+			insert(name, "Percentilie P" + std::to_string(percentile),
+				histogram.Percentile(percentile));
+		}
+		insert(name, "Median", histogram.Median());
+
 	}
 
 	void print_histogram()
