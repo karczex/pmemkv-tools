@@ -417,12 +417,12 @@ private:
 
     void PrintHeader() {
         PrintEnvironment();
-        logger.insert("Path", FLAGS_db);
-        logger.insert("Engine", engine);
-        logger.insert("Keys [bytes each]", FLAGS_key_size);
-        logger.insert("Values [bytes each]", FLAGS_value_size);
-        logger.insert("Entries", num_);
-        logger.insert("RawSize [MB (estimated)]",
+        logger.insert(name.ToString(), "Path", FLAGS_db);
+        logger.insert(name.ToString(), "Engine", engine);
+        logger.insert(name.ToString(), "Keys [bytes each]", FLAGS_key_size);
+        logger.insert(name.ToString(), "Values [bytes each]", FLAGS_value_size);
+        logger.insert(name.ToString(), "Entries", num_);
+        logger.insert(name.ToString(), "RawSize [MB (estimated)]",
                 ((static_cast<int64_t>(FLAGS_key_size + FLAGS_value_size) * num_)
                  / 1048576.0));
         PrintWarnings();
@@ -444,7 +444,7 @@ private:
 #if defined(__linux)
         time_t now = time(NULL);
         auto formatted_time = std::string(ctime(&now));
-        logger.insert("Date:", formatted_time.erase(formatted_time.find_last_not_of("\n")));
+        logger.insert(name.ToString(), "Date:", formatted_time.erase(formatted_time.find_last_not_of("\n")));
 
         FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
         if (cpuinfo != NULL) {
@@ -467,9 +467,9 @@ private:
                 }
             }
             fclose(cpuinfo);
-            logger.insert("CPU", std::to_string(num_cpus));
-            logger.insert("CPU model", cpu_type);
-            logger.insert("CPUCache", cache_size);
+            logger.insert(name.ToString(), "CPU", std::to_string(num_cpus));
+            logger.insert(name.ToString(), "CPU model", cpu_type);
+            logger.insert(name.ToString(), "CPUCache", cache_size);
         }
 #endif
     }
@@ -520,6 +520,7 @@ public:
                 fprintf(stderr, "unknown benchmark '%s'\n", name.ToString().c_str());
             }
         }
+	PrintHeader();
 
         Open(fresh_db, name.ToString());
     }
