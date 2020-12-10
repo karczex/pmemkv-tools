@@ -510,7 +510,8 @@ private:
     void PrintEnvironment() {
 #if defined(__linux)
         time_t now = time(NULL);
-        logger.insert("Date:", std::string(ctime(&now), 23));
+        auto formatted_time = std::string(ctime(&now));
+        logger.insert("Date:", formatted_time.erase(formatted_time.find_last_not_of("\n")));
 
         FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
         if (cpuinfo != NULL) {
