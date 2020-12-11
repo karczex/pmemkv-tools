@@ -6,7 +6,7 @@
 /* declare a map object for holding loaded libraries: */
 libs = [:]
 
-currentBuild.displayName = "#$currentBuild.id $LABEL: $BRANCH - $TEST_TYPE, coverage: $COVERAGE"
+currentBuild.displayName = "#$currentBuild.id $LABEL: $BRANCH - $TEST_TYPE"
 currentBuild.description = "$DESCRIPTION"
 
 PROJECT_NAME='pmemkv-bench'

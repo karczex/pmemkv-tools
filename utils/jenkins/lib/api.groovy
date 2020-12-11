@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright 2019-2020, Intel Corporation */
 
-/* Jenkinsfile - scripts to create pmemkv and pmemkv_matrix jobs - to run with initial jenkins job. */
-
-/* common functions and variables. */
+/* Jenkinsfile helper functions collection */
 
 import java.util.regex.*
 
@@ -87,7 +85,7 @@ def run_bash_script(script_text, log_file = LOG_FILE, import_common_file = false
 	if (error_on_non_zero_rc && returned_status != 0) {
 		error("script returned exit code ${returned_status}")
 	}
-	
+
 	def retval = [:]
 	retval.output = script_output.trim()
 	retval.status = returned_status
