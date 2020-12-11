@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /* Copyright 2019-2020, Intel Corporation */
 
-/* Jenkinsfile - Scripts to create pmemkv-bench and pmemkv-bench_matrix jobs - to run with initial jenkins job. */
+/* Jenkinsfile - Scripts to create pmemkv-bench and pmemkv-bench_matrix jobs */
 
 /* define common properties of pipelines: */
 description_param = '''
