@@ -33,6 +33,9 @@ class Repository:
         self.clone()
         self.checkout()
 
+    def __str__(self):
+        return f"{self.url} in {self.path}"
+
     def checkout(self):
         self.logger.info(f"Checking out commit: {self.commit}")
         subprocess.run(
@@ -61,8 +64,8 @@ class CmakeProject:
         self.build_env = config["env"]
         self.build_env["PKG_CONFIG_PATH"] = self.format_pkg_config_path()
         self.build_env["PATH"] = os.environ["PATH"]
-        self.cmake_params = config["cmake_params"] + [
-            f"-DCMAKE_INSTALL_PREFIX={self.install_path}"
+        self.cmake_params = [f"-DCMAKE_INSTALL_PREFIX={self.install_path}"] + config[
+            "cmake_params"
         ]
 
     def format_pkg_config_path(self):
@@ -71,6 +74,7 @@ class CmakeProject:
     def build(self):
         cpus = f"{os.cpu_count()}"
         self.logger.info(f"{self.build_env}=")
+        self.logger.info(f"building {self.repo}")
         try:
             subprocess.run(
                 "cmake .".split() + self.cmake_params,
@@ -102,12 +106,13 @@ class DB_bench:
         self.benchmark_params = config["params"]
 
     def build(self):
-
         build_env = {
             "PATH": os.environ["PATH"],
             "PKG_CONFIG_PATH": self.pmemkv.format_pkg_config_path(),
         }
         self.logger.debug(f"{build_env=}")
+        self.logger.info(f"building {self.repo}")
+
         try:
             subprocess.run(
                 "make bench".split(), env=build_env, cwd=self.path, check=True
@@ -117,7 +122,6 @@ class DB_bench:
             raise e
 
     def run(self):
-
         find_file_path = lambda root_dir, filename: ":".join(
             set(
                 os.path.dirname(x)
@@ -150,12 +154,12 @@ class DB_bench:
         return [dict(x) for x in OutputReader]
 
 
-def upload_to_mongodb(address, port, username, password, db_name, data):
+def upload_to_mongodb(address, port, username, password, db_name, collection, data):
     client = MongoClient(address, int(port), username=username, password=password)
     with client:
         db = client[db_name]
-        column = db["test_data"]
-        column.insert_one(data)
+        collection = db[collection]
+        collection.insert_one(data)
 
 
 def print_results(results_dict):
@@ -169,8 +173,8 @@ Runs pmemkv-bench for pmemkv and libpmemobjcpp defined in configuration json
 +-------------------------------------+
 |       run_benchmark.py              |
 |                                     |       +-----------------------+
-| +------------------------+          |       | libpmemobj+cpp        |
-| | libpmemobjcpp          |          |       | git repozitory        |
+| +------------------------+          |       | libpmemobj-cpp        |
+| | libpmemobjcpp          |          |       | git repository        |
 | | +----------------------+ <----------------+                       |
 | | Downloads and builds   |          |       |                       |
 | | libpmemobj+cpp         |          |       +-----------------------+
@@ -179,7 +183,7 @@ Runs pmemkv-bench for pmemkv and libpmemobjcpp defined in configuration json
 |                                     |
 |                                     |       +-----------------------+
 | +------------------------+          |       | pmemkv                |
-| | pmemkv                 |          |       | git repozitory        |
+| | pmemkv                 |          |       | git repository        |
 | | +----------------------+ <----------------+                       |
 | | Downloads and builds   |          |       |                       |
 | | pmemk^ project         |          |       +-----------------------+
@@ -187,7 +191,7 @@ Runs pmemkv-bench for pmemkv and libpmemobjcpp defined in configuration json
 |                                     |
 |                                     |       +-----------------------+
 | +------------------------+          |       | pmemkv+tools          |
-| | pmemkk<|bench          |          |       | git repository        |
+| | pmemkv bench           |          |       | git repository        |
 | | +----------------------+ <----------------+                       |
 | | Runs benchmark and     |          |       |                       |
 | | uploads results to     |          |       +-----------------------+
@@ -207,17 +211,19 @@ Runs pmemkv-bench for pmemkv and libpmemobjcpp defined in configuration json
                                               +-------------------------+
 
 Environment variables for MongoDB client configuration:
-  MONGO_ADDRESS, MONGO_PORT, MONGO_USER, MONGO_PASSWORD and MONGO_DB_NAME
+  MONGO_ADDRESS, MONGO_PORT, MONGO_USER, MONGO_PASSWORD, MONGO_DB_NAME and MONGO_DB_COLLECTION
 """
     # Setup loglevel
     LOGLEVEL = os.environ.get("LOGLEVEL") or "INFO"
     logging.basicConfig(level=LOGLEVEL)
 
     # Parse arguments
-    parser = argparse.ArgumentParser(description=help_msg, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=help_msg, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("config_path", help="Path to json config file")
     args = parser.parse_args()
-    logger.info(args.config_path)
+    logger.info(f"{args.config_path=}")
 
     # Setup database
     db_address = db_port = db_user = db_passwd = db_name = None
@@ -227,6 +233,7 @@ Environment variables for MongoDB client configuration:
         db_user = os.environ["MONGO_USER"]
         db_passwd = os.environ["MONGO_PASSWORD"]
         db_name = os.environ["MONGO_DB_NAME"]
+        db_collection = os.environ["MONGO_DB_COLLECTION"]
     except KeyError as e:
         logger.warning(
             f"Environmet variable {e} was not specified, so results cannot be uploaded to the database"
@@ -253,8 +260,10 @@ Environment variables for MongoDB client configuration:
     report["results"] = benchmark_results
 
     print_results(report)
-    if db_address and db_port and db_user and db_passwd and db_name:
-        upload_to_mongodb(db_address, db_port, db_user, db_passwd, db_name, report)
+    if db_address and db_port and db_user and db_passwd and db_name and db_collection:
+        upload_to_mongodb(
+            db_address, db_port, db_user, db_passwd, db_name, db_collection, report
+        )
     else:
         logger.warning("Results not uploaded to database")
 
