@@ -174,14 +174,15 @@ enum OperationType : unsigned char {
 };
 
 
-class csvLogger : public CSV
+class BenchmarkLogger : public CSV
 {
 private:
 	std::map<std::string, std::string> histograms;
 
 public:
-	using CSV::CSV;
 	using CSV::insert;
+
+	BenchmarkLogger() : CSV("Benchmark") {};
 
 	void insert(std::string name, Histogram histogram)
 	{
@@ -408,7 +409,7 @@ private:
     int key_size_;
     int reads_;
     int64_t readwrites_;
-    csvLogger &logger;
+    BenchmarkLogger &logger;
     Slice name;
     int n;
     const char *engine;
@@ -475,7 +476,7 @@ private:
     }
 
 public:
-    Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, csvLogger &logger)
+    Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, BenchmarkLogger &logger)
             :
             kv_(kv),
             num_(FLAGS_num),
@@ -932,7 +933,7 @@ int main(int argc, char **argv) {
     // Run benchmark against default environment
     g_env = leveldb::Env::Default();
 
-    csvLogger *logger = new csvLogger;
+    BenchmarkLogger *logger = new BenchmarkLogger;
 
     pmem::kv::db *kv = NULL;
     const char *benchmarks = FLAGS_benchmarks;

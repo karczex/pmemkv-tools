@@ -11,10 +11,10 @@ private:
 
 	std::map<std::string, std::map<std::string, std::string>> data_matrix;
 	std::set<std::string> column_index;
-	std::string id_name = "benchmark";
+	std::string id_name;
 
 public:
-
+	CSV(std::string id_collumn_name) : id_name(id_collumn_name){};
 	void insert(std::string row, std::string column, std::string data)
 	{
 		column_index.insert(column);
@@ -34,7 +34,9 @@ public:
 
 	void print()
 	{
+		// Print first column name
 		std::cout<< id_name;
+
 		for( auto &column: column_index)
 		{
 			std::cout << "," << column;
