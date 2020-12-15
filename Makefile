@@ -3,8 +3,8 @@
 
 .ONESHELL:
 
-bench: CFLAGS = $(shell pkg-config --cflags libpmemkv libpmempool) -DOS_LINUX -fno-builtin-memcmp -march=native -DNDEBUG -O2 -std=c++11
-bench: LDFLAGS = -ldl -lpthread $(shell pkg-config --libs libpmemkv libpmempool)
+bench: CFLAGS = $(shell pkg-config --cflags libpmemkv libpmempool libpmemobj) -DOS_LINUX -fno-builtin-memcmp -march=native -DNDEBUG -O2 -std=c++11
+bench: LDFLAGS = -ldl -lpthread $(shell pkg-config --libs libpmemkv libpmempool libpmemobj)
 CPP_FILES = $(shell find . -iname "*.h" -o -iname "*.cc"  -o -iname "*.cpp" -o -iname "*.hpp")
 
 .PHONY: cppformat $(CPP_FILES)

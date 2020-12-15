@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <sys/types.h>
 #include <vector>
@@ -29,6 +30,10 @@
 #include "port/port_posix.h"
 #include "random.h"
 #include "testutil.h"
+
+#include "containers/concurrent_hashmap_wrapper.h"
+#include "containers/map_wrapper.h"
+#include "containers/pmemkv_wrapper.h"
 
 static const std::string USAGE =
 	"pmemkv_bench\n"
@@ -182,29 +187,32 @@ enum OperationType : unsigned char {
 	kUpdate,
 };
 
-class BenchmarkLogger : public CSV {
+class BenchmarkLogger {
 private:
 	struct hist {
 		std::string name;
 		std::string histogram;
 	};
-
+	int id = 0;
 	std::vector<hist> histograms;
+	CSV csv = CSV("id");
 
 public:
-	using CSV::insert;
-
-	BenchmarkLogger() : CSV("Benchmark"){};
-
 	void insert(std::string name, Histogram histogram)
 	{
 		histograms.push_back({name, histogram.ToString()});
 		std::vector<double> percentiles = {50, 75, 90, 99.9, 99.99};
+		// XXX: add metric
 		for (double &percentile : percentiles) {
-			insert(name, "Percentilie P" + std::to_string(percentile),
-			       histogram.Percentile(percentile));
+			csv.insert(std::to_string(id), "Percentilie P" + std::to_string(percentile),
+				   histogram.Percentile(percentile));
 		}
-		insert(name, "Median", histogram.Median());
+		csv.insert(std::to_string(id), "Median", histogram.Median());
+	}
+	template <typename T>
+	void insert(std::string column, T data)
+	{
+		csv.insert(std::to_string(id), column, data);
 	}
 
 	void print_histogram()
@@ -213,6 +221,17 @@ public:
 		for (auto &histogram : histograms) {
 			std::cout << histogram.name << std::endl << histogram.histogram << std::endl;
 		}
+	}
+
+	void print()
+	{
+		csv.print();
+	}
+
+	BenchmarkLogger operator++(int)
+	{
+		id++;
+		return *this;
 	}
 };
 
@@ -445,7 +464,7 @@ private:
 
 class Benchmark {
 private:
-	pmem::kv::db *kv_;
+	ContainerWrapper *kv_;
 	int num_;
 	int value_size_;
 	int key_size_;
@@ -461,13 +480,15 @@ private:
 	void PrintHeader()
 	{
 		PrintEnvironment();
-		logger.insert(name.ToString(), "Path", FLAGS_db);
-		logger.insert(name.ToString(), "Engine", engine);
-		logger.insert(name.ToString(), "Keys [bytes each]", FLAGS_key_size);
-		logger.insert(name.ToString(), "Values [bytes each]", FLAGS_value_size);
-		logger.insert(name.ToString(), "Entries", num_);
-		logger.insert(name.ToString(), "RawSize [MB (estimated)]",
+		logger.insert("Path", FLAGS_db);
+		//	XXX
+		//        logger.insert("Engine", engine);
+		logger.insert("Keys [bytes each]", FLAGS_key_size);
+		logger.insert("Values [bytes each]", FLAGS_value_size);
+		logger.insert("Entries", num_);
+		logger.insert("RawSize [MB (estimated)]",
 			      ((static_cast<int64_t>(FLAGS_key_size + FLAGS_value_size) * num_) / 1048576.0));
+		logger.insert("Container", kv_->name());
 		PrintWarnings();
 	}
 
@@ -486,8 +507,7 @@ private:
 #if defined(__linux)
 		time_t now = time(NULL);
 		auto formatted_time = std::string(ctime(&now));
-		logger.insert(name.ToString(),
-			      "Date:", formatted_time.erase(formatted_time.find_last_not_of("\n")));
+		logger.insert("Date:", formatted_time.erase(formatted_time.find_last_not_of("\n")));
 
 		FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
 		if (cpuinfo != NULL) {
@@ -510,19 +530,19 @@ private:
 				}
 			}
 			fclose(cpuinfo);
-			logger.insert(name.ToString(), "CPU", std::to_string(num_cpus));
-			logger.insert(name.ToString(), "CPU model", cpu_type);
-			logger.insert(name.ToString(), "CPUCache", cache_size);
+			logger.insert("CPU", std::to_string(num_cpus));
+			logger.insert("CPU model", cpu_type);
+			logger.insert("CPUCache", cache_size);
 		}
 #endif
 	}
 
 public:
-	Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, BenchmarkLogger &logger)
+	Benchmark(Slice name, ContainerWrapper *kv, int num_threads, BenchmarkLogger &logger)
 	    : kv_(kv), num_(FLAGS_num), value_size_(FLAGS_value_size), key_size_(FLAGS_key_size),
 	      reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
 	      readwrites_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads), logger(logger), n(num_threads),
-	      name(name), engine(engine)
+	      name(name)
 	{
 		fprintf(stderr, "running %s \n", name.ToString().c_str());
 		bool fresh_db = false;
@@ -553,9 +573,15 @@ public:
 		} else {
 			throw std::runtime_error("unknown benchmark: " + name.ToString());
 		}
+		logger++;
+		logger.insert("Benchmark", name.ToString());
 		PrintHeader();
-
-		Open(fresh_db, name.ToString());
+		try {
+			kv->Open(name.ToString(), fresh_db);
+		} catch (std::exception &e) {
+			std::cerr << "Cannot start benchmark";
+			throw std::runtime_error(e.what());
+		}
 	}
 
 	~Benchmark()
@@ -620,10 +646,10 @@ public:
 			arg[0].thread->stats.Merge(arg[i].thread->stats);
 		}
 		auto thread_stats = arg[0].thread->stats;
-		logger.insert(name.ToString(), "micros/op", thread_stats.get_micros_per_op());
-		logger.insert(name.ToString(), "ops/sec", thread_stats.get_ops_per_sec());
-		logger.insert(name.ToString(), "throughput [MB/s]", thread_stats.get_throughput());
-		logger.insert(name.ToString(), "extra_data", thread_stats.get_extra_data());
+		logger.insert("micros/op", thread_stats.get_micros_per_op());
+		logger.insert("ops/sec", thread_stats.get_ops_per_sec());
+		logger.insert("throughput [MB/s]", thread_stats.get_throughput());
+		logger.insert("extra_data", thread_stats.get_extra_data());
 		if (FLAGS_histogram) {
 			logger.insert(name.ToString(), thread_stats.get_histogram());
 		}
@@ -671,56 +697,6 @@ private:
 		}
 	}
 
-	void Open(bool fresh_db, std::string name)
-	{
-		assert(kv_ == NULL);
-		auto start = g_env->NowMicros();
-		auto size = 1024ULL * 1024ULL * 1024ULL * FLAGS_db_size_in_gb;
-		pmem::kv::config cfg;
-
-		auto cfg_s = cfg.put_string("path", FLAGS_db);
-
-		if (cfg_s != pmem::kv::status::OK)
-			throw std::runtime_error("putting 'path' to config failed");
-
-		if (fresh_db) {
-			cfg_s = cfg.put_uint64("force_create", 1);
-			if (cfg_s != pmem::kv::status::OK)
-				throw std::runtime_error("putting 'force_create' to config failed");
-
-			cfg_s = cfg.put_uint64("size", size);
-
-			if (cfg_s != pmem::kv::status::OK)
-				throw std::runtime_error("putting 'size' to config failed");
-
-			if (kv_ != NULL) {
-				delete kv_;
-				kv_ = NULL;
-			}
-			auto start = g_env->NowMicros();
-			/* Remove pool file. This should be
-			 * implemented using libpmempool for backward
-			 * compatibility. */
-			if (pmempool_rm(FLAGS_db, PMEMPOOL_RM_FORCE) != 0) {
-				throw std::runtime_error(std::string("Cannot remove pool: ") + FLAGS_db);
-			}
-			logger.insert(name, "Remove [millis millis/op]",
-				      ((g_env->NowMicros() - start) * 1e-3));
-		}
-
-		kv_ = new pmem::kv::db;
-		auto s = kv_->open(engine, std::move(cfg));
-
-		if (s != pmem::kv::status::OK) {
-			fprintf(stderr,
-				"Cannot start engine (%s) for path (%s) with %i GB capacity\n%s\n\nUSAGE: %s",
-				engine, FLAGS_db, FLAGS_db_size_in_gb, pmem::kv::errormsg().c_str(),
-				USAGE.c_str());
-			exit(-42);
-		}
-		logger.insert(name, "Open [millis/op]", ((g_env->NowMicros() - start) * 1e-3));
-	}
-
 	void DoWrite(ThreadState *thread, bool seq)
 	{
 		if (num_ != FLAGS_num) {
@@ -735,7 +711,7 @@ private:
 		auto start = FLAGS_disjoint ? thread->tid * num_ : 0;
 		auto end = FLAGS_disjoint ? (thread->tid + 1) * num_ : num_;
 
-		pmem::kv::status s;
+		bool s;
 		int64_t bytes = 0;
 		for (int i = start; i < end; i++) {
 			const int k = seq ? i : (thread->rand.Next() % num) + start;
@@ -745,7 +721,7 @@ private:
 			s = kv_->put(key.ToString(), value);
 			bytes += value_size_ + key.size();
 			thread->stats.FinishedSingleOp();
-			if (s != pmem::kv::status::OK) {
+			if (s != true) {
 				fprintf(stdout, "Out of space at key %i\n", i);
 				exit(1);
 			}
@@ -765,7 +741,6 @@ private:
 
 	void DoRead(ThreadState *thread, bool seq, bool missing)
 	{
-		pmem::kv::status s;
 		int64_t bytes = 0;
 		int found = 0;
 		std::unique_ptr<const char[]> key_guard;
@@ -779,7 +754,7 @@ private:
 			const int k = seq ? i : (thread->rand.Next() % num) + start;
 			GenerateKeyFromInt(k, FLAGS_num, &key, missing);
 			std::string value;
-			if (kv_->get(key.ToString(), &value) == pmem::kv::status::OK)
+			if (kv_->get(key.ToString(), &value) == true)
 				found++;
 			thread->stats.FinishedSingleOp();
 			bytes += value.length() + key.size();
@@ -852,7 +827,7 @@ private:
 			}
 
 			GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
-			pmem::kv::status s;
+			bool s;
 
 			if (write_merge == kWrite) {
 				s = kv_->put(key.ToString(), gen.Generate(value_size_).ToString());
@@ -862,7 +837,7 @@ private:
 			}
 			written++;
 
-			if (s != pmem::kv::status::OK) {
+			if (s != true) {
 				fprintf(stderr, "Put error\n");
 				exit(1);
 			}
@@ -905,25 +880,16 @@ private:
 			}
 			if (get_weight > 0) {
 				value.clear();
-				pmem::kv::status s = kv_->get(key.ToString(), &value);
-				if (s == pmem::kv::status::OK) {
+				if (kv_->get(key.ToString(), &value)) {
 					found++;
-				} else if (s != pmem::kv::status::NOT_FOUND) {
-					fprintf(stderr, "get error\n");
 				}
-
 				bytes += value.length() + key.size();
 				get_weight--;
 				reads_done++;
 				thread->stats.FinishedSingleOp();
 			} else if (put_weight > 0) {
-				// then do all the corresponding number of puts
-				// for all the gets we have done earlier
-				pmem::kv::status s =
-					kv_->put(key.ToString(), gen.Generate(value_size_).ToString());
-				if (s != pmem::kv::status::OK) {
-					fprintf(stderr, "put error\n");
-					exit(1);
+				if (!kv_->put(key.ToString(), gen.Generate(value_size_).ToString())) {
+					throw std::runtime_error("put error");
 				}
 				bytes += key.size() + value_size_;
 				put_weight--;
@@ -940,6 +906,25 @@ private:
 	}
 };
 
+std::vector<Slice> split(const char *str)
+{
+	std::vector<Slice> elements;
+
+	while (str != NULL) {
+		const char *sep = strchr(str, ',');
+		Slice name;
+		if (sep == NULL) {
+			name = str;
+			str = NULL;
+		} else {
+			name = Slice(str, sep - str);
+			str = sep + 1;
+		}
+		elements.push_back(name);
+	}
+	return elements;
+}
+
 int main(int argc, char **argv)
 {
 	// Default list of comma-separated operations to run
@@ -947,6 +932,7 @@ int main(int argc, char **argv)
 		"fillseq,fillrandom,overwrite,readseq,readrandom,readmissing,deleteseq,deleterandom,readwhilewriting,readrandomwriterandom";
 	// Default engine name
 	static const char *FLAGS_engine = "cmap";
+	static const char *FLAGS_containers = "pmemkv";
 
 	// Print usage statement if necessary
 	if (argc != 1) {
@@ -963,6 +949,8 @@ int main(int argc, char **argv)
 		char junk;
 		if (leveldb::Slice(argv[i]).starts_with("--benchmarks=")) {
 			FLAGS_benchmarks = argv[i] + strlen("--benchmarks=");
+		} else if (leveldb::Slice(argv[i]).starts_with("--container=")) {
+			FLAGS_containers = argv[i] + strlen("--container=");
 		} else if (strncmp(argv[i], "--engine=", 9) == 0) {
 			FLAGS_engine = argv[i] + 9;
 		} else if (sscanf(argv[i], "--histogram=%d%c", &n, &junk) == 1 && (n == 0 || n == 1)) {
@@ -991,29 +979,34 @@ int main(int argc, char **argv)
 		}
 	}
 
+	auto container = std::string(FLAGS_containers);
+	auto benchmarks = split(FLAGS_benchmarks);
+
 	// Run benchmark against default environment
 	g_env = leveldb::Env::Default();
 
 	BenchmarkLogger logger = BenchmarkLogger();
 	int return_value = 0;
-	pmem::kv::db *kv = NULL;
-	const char *benchmarks = FLAGS_benchmarks;
-	while (benchmarks != NULL) {
-		const char *sep = strchr(benchmarks, ',');
-		Slice name;
-		if (sep == NULL) {
-			name = benchmarks;
-			benchmarks = NULL;
-		} else {
-			name = Slice(benchmarks, sep - benchmarks);
-			benchmarks = sep + 1;
-		}
+	auto size = 1024ULL * 1024ULL * 1024ULL * FLAGS_db_size_in_gb;
+
+	ContainerWrapper *kv = NULL;
+	if (container == "pmemkv") {
+		kv = new pmemkvWrapper(FLAGS_engine, FLAGS_db, size);
+	} else if (container == "map") {
+		kv = new mapWrapper();
+	} else if (container == "concurrent_hash_map") {
+		kv = new ConcurrentHashMapWrapper(FLAGS_db, size);
+	} else {
+		std::cerr << "Invalid container name " << container << std::endl;
+		return -1;
+	}
+	for (auto &benchmark : benchmarks) {
 		try {
-			auto benchmark = Benchmark(name, kv, FLAGS_threads, FLAGS_engine, logger);
-			benchmark.Run();
+			auto containerBenchmark = Benchmark(benchmark, kv, FLAGS_threads, logger);
+			containerBenchmark.Run();
 		} catch (std::exception &e) {
 			std::cerr << e.what() << std::endl;
-			return_value = 1;
+			return_value += 1;
 			break;
 		}
 	}
