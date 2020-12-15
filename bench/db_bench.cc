@@ -27,7 +27,9 @@
 #include "csv.h"
 #include "mutexlock.h"
 #include "random.h"
-#include "libpmemkv.hpp"
+
+#include "containers/pmemkv_wrapper.h"
+#include "containers/map_wrapper.h"
 
 static const std::string USAGE =
         "pmemkv_bench\n"
@@ -404,9 +406,10 @@ private:
     time_point start_at_;
 };
 
+template<typename CONTAINER>
 class Benchmark {
 private:
-    pmem::kv::db *kv_;
+    CONTAINER *kv_;
     int num_;
     int value_size_;
     int key_size_;
@@ -479,7 +482,7 @@ private:
     }
 
 public:
-    Benchmark(Slice name, pmem::kv::db *kv, int num_threads, const char *engine, BenchmarkLogger &logger)
+    Benchmark(Slice name, CONTAINER *kv, int num_threads, const char *engine, BenchmarkLogger &logger)
             :
             kv_(kv),
             num_(FLAGS_num),
@@ -522,8 +525,8 @@ public:
             throw std::runtime_error("unknown benchmark: " + name.ToString());
         }
         PrintHeader();
-
-        Open(fresh_db, name.ToString());
+	// XXX
+        kv->Open(fresh_db, name.ToString());
     }
 
     ~Benchmark()
@@ -639,52 +642,52 @@ private:
     }
 
 
-	void Open(bool fresh_db, std::string name) {
-		assert(kv_ == NULL);
-		auto start = g_env->NowMicros();
-		auto size = 1024ULL * 1024ULL * 1024ULL * FLAGS_db_size_in_gb;
-		pmem::kv::config cfg;
-
-		auto cfg_s = cfg.put_string("path", FLAGS_db);
-
-		if (cfg_s != pmem::kv::status::OK)
-			throw std::runtime_error("putting 'path' to config failed");
-
-		if (fresh_db) {
-			cfg_s = cfg.put_uint64("force_create", 1);
-			if (cfg_s != pmem::kv::status::OK)
-				throw std::runtime_error(
-					"putting 'force_create' to config failed");
-
-			cfg_s = cfg.put_uint64("size", size);
-
-			if (cfg_s != pmem::kv::status::OK)
-				throw std::runtime_error(
-					"putting 'size' to config failed");
-
-			if (kv_ != NULL) {
-				delete kv_;
-				 kv_ = NULL;
-		        }
-			if (FLAGS_db_size_in_gb > 0) {
-				auto start = g_env->NowMicros();
-				std::remove(FLAGS_db);
-				logger.insert(name, "Remove [millis millis/op]", ((g_env->NowMicros() - start) * 1e-3));
-				}
-		}
-
-		kv_ = new pmem::kv::db;
-		auto s = kv_->open(engine, std::move(cfg));
-
-		if (s !=  pmem::kv::status::OK) {
-			fprintf(stderr,
-				"Cannot start engine (%s) for path (%s) with %i GB capacity\n%s\n\nUSAGE: %s",
-				engine, FLAGS_db, FLAGS_db_size_in_gb, pmem::kv::errormsg().c_str(),
-				USAGE.c_str());
-			exit(-42);
-		}
-		logger.insert(name, "Open [millis/op]", ((g_env->NowMicros() - start) * 1e-3));
-    }
+//	void Open(bool fresh_db, std::string name) {
+//		assert(kv_ == NULL);
+//		auto start = g_env->NowMicros();
+//		auto size = 1024ULL * 1024ULL * 1024ULL * FLAGS_db_size_in_gb;
+//		pmem::kv::config cfg;
+//
+//		auto cfg_s = cfg.put_string("path", FLAGS_db);
+//
+//		if (cfg_s != pmem::kv::status::OK)
+//			throw std::runtime_error("putting 'path' to config failed");
+//
+//		if (fresh_db) {
+//			cfg_s = cfg.put_uint64("force_create", 1);
+//			if (cfg_s != pmem::kv::status::OK)
+//				throw std::runtime_error(
+//					"putting 'force_create' to config failed");
+//
+//			cfg_s = cfg.put_uint64("size", size);
+//
+//			if (cfg_s != pmem::kv::status::OK)
+//				throw std::runtime_error(
+//					"putting 'size' to config failed");
+//
+//			if (kv_ != NULL) {
+//				delete kv_;
+//				 kv_ = NULL;
+//		        }
+//			if (FLAGS_db_size_in_gb > 0) {
+//				auto start = g_env->NowMicros();
+//				std::remove(FLAGS_db);
+//				logger.insert(name, "Remove [millis millis/op]", ((g_env->NowMicros() - start) * 1e-3));
+//				}
+//		}
+//
+//		kv_ = new pmem::kv::db;
+//		auto s = kv_->open(engine, std::move(cfg));
+//
+//		if (s !=  pmem::kv::status::OK) {
+//			fprintf(stderr,
+//				"Cannot start engine (%s) for path (%s) with %i GB capacity\n%s\n\nUSAGE: %s",
+//				engine, FLAGS_db, FLAGS_db_size_in_gb, pmem::kv::errormsg().c_str(),
+//				USAGE.c_str());
+//			exit(-42);
+//		}
+//		logger.insert(name, "Open [millis/op]", ((g_env->NowMicros() - start) * 1e-3));
+//    }
 
     void DoWrite(ThreadState *thread, bool seq) {
         if (num_ != FLAGS_num) {
@@ -695,7 +698,7 @@ private:
         std::unique_ptr<const char[]> key_guard;
         Slice key = AllocateKey(key_guard);
 
-        pmem::kv::status s;
+        bool s;
         int64_t bytes = 0;
         for (int i = 0; i < num_; i++) {
             const int k = seq ? i : (thread->rand.Next() % FLAGS_num);
@@ -705,7 +708,7 @@ private:
             s = kv_->put(key.ToString(), value);
             bytes += value_size_ + key.size();
             thread->stats.FinishedSingleOp();
-            if (s != pmem::kv::status::OK) {
+            if (s != true) {
                 fprintf(stdout, "Out of space at key %i\n", i);
                 exit(1);
             }
@@ -731,7 +734,7 @@ private:
             const int k = seq ? i : (thread->rand.Next() % FLAGS_num);
             GenerateKeyFromInt(k, FLAGS_num, &key, missing);
             std::string value;
-            if (kv_->get(key.ToString(), &value) == pmem::kv::status::OK) found++;
+            if (kv_->get(key.ToString(), &value) == true) found++;
             thread->stats.FinishedSingleOp();
             bytes += value.length() + key.size();
         }
@@ -796,7 +799,7 @@ private:
             }
 
             GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
-            pmem::kv::status s;
+            bool s;
 
             if (write_merge == kWrite) {
                 s = kv_->put(key.ToString(), gen.Generate(value_size_).ToString());
@@ -806,7 +809,7 @@ private:
             }
             written++;
 
-            if (s != pmem::kv::status::OK) {
+            if (s != true) {
                 fprintf(stderr, "Put error\n");
                 exit(1);
             }
@@ -847,10 +850,13 @@ private:
             }
             if (get_weight > 0) {
                 value.clear();
-                pmem::kv::status s = kv_->get(key.ToString(), &value);
-                if (s == pmem::kv::status::OK) {
+// XXX - FIX for pmemkv
+//                pmem::kv::status s = kv_->get(key.ToString(), &value);
+//                if (s == pmem::kv::status::OK) {
+		if(kv_->get(key.ToString(), &value)) {
                     found++;
-                } else if (s != pmem::kv::status::NOT_FOUND) {
+// XXX NOT FOUND
+                } else {
                     fprintf(stderr, "get error\n");
                 }
 
@@ -861,8 +867,9 @@ private:
             } else if (put_weight > 0) {
                 // then do all the corresponding number of puts
                 // for all the gets we have done earlier
-                pmem::kv::status s = kv_->put(key.ToString(), gen.Generate(value_size_).ToString());
-                if (s != pmem::kv::status::OK) {
+// XXX - FIX for pmemkv
+//                pmem::kv::status s = kv_->put(key.ToString(), gen.Generate(value_size_).ToString());
+                if (! kv_->put(key.ToString(), gen.Generate(value_size_).ToString())) {
                     fprintf(stderr, "put error\n");
                     exit(1);
                 }
@@ -936,6 +943,10 @@ int main(int argc, char **argv) {
     int return_value = 0;
     pmem::kv::db *kv = NULL;
     const char *benchmarks = FLAGS_benchmarks;
+
+    auto size = 1024ULL * 1024ULL * 1024ULL * FLAGS_db_size_in_gb;
+    pmemkvWrapper pmemkv = pmemkvWrapper(FLAGS_engine, FLAGS_db, size);
+
     while (benchmarks !=NULL)
     {
             const char *sep = strchr(benchmarks, ',');
@@ -948,8 +959,13 @@ int main(int argc, char **argv) {
                 benchmarks = sep + 1;
             }
             try{
-                auto benchmark = Benchmark(name, kv, FLAGS_threads, FLAGS_engine, logger);
-                benchmark.Run();
+                auto pmemkvBenchmark = Benchmark<pmemkvWrapper>(name, &pmemkv, FLAGS_threads, FLAGS_engine, logger);
+                pmemkvBenchmark.Run();
+
+		mapWrapper m;
+		auto mapBenchmark = Benchmark<mapWrapper>(name, &m, FLAGS_threads, FLAGS_engine, logger);
+		    mapBenchmark.Run();
+
             } catch (std::exception &e)
             {
                 std::cerr << e.what() << std::endl;
