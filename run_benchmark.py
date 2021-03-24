@@ -46,6 +46,38 @@ class CmdLine:
         return self.cmdline[item]
 
 
+class Emon:
+    def __init__(self):
+        self._emon_process = None
+
+    def start(self):
+        cmd = "emon -collect-edp".split()
+        self._emon_process= subprocess.popen(cmd)
+
+    def stop(self):
+        cmd = "emon -stop".split()
+        subprocess.run(
+                cmd,
+                check=True,
+            )
+
+    def get_emon_data(self):
+        if self._emon_process:
+            return self._emon_process.communicate()
+        return None
+
+    def get_emon_v(self):
+        cmd = "emon -v".split()
+        return subprocess.run(
+                cmd,
+                capture_output=True,
+                check=True,
+            )
+
+    def __del__(self):
+        self.stop()
+
+
 class Repository:
     def __init__(self, config: dict):
         self.logger = logging.getLogger(type(self).__name__)
@@ -176,7 +208,6 @@ class DB_bench:
             cmd.append("numactl", numactl)
         cmd.append("pmemkv_bench", benchmark_params)
         logger.info(cmd)
-
         try:
             self.run_output = subprocess.run(
                 cmd,
@@ -344,12 +375,18 @@ This parameter sets configuration of benchmarking process. Input structure is sp
     benchmark = DB_bench(config["db_bench"], pmemkv)
 
     benchmark.build()
+    emon = Emon()
     for test_case in bench_params:
         logger.info(f"Running: {test_case}")
+        if test_case.get("emon"):
+            emon.start()
         benchmark.run(test_case["env"], test_case["pmemkv_bench"], test_case.get("numactl"))
+        if test_case.get("emon"):
+            emon.stop()
         benchmark.cleanup(test_case["pmemkv_bench"])
         benchmark_results = benchmark.get_results()
-
+        if test_case.get("emon"):
+            benchmark_results["emon"] = { "emon.dat" = emon.get_emon_data(), "emon-v.dat" = emon.get_emon_v())}
         report = {}
         report["build_configuration"] = config
         report["runtime_parameters"] = test_case
