@@ -236,13 +236,16 @@ class DB_bench:
         self.logger.info(f"{db_path} cleaned")
 
     def get_results(self):
+        def preprocess(d):
+            return {k.replace('.', '_') : preprocess(v) for k,v in d.items()} if isinstance(d,dict) else d
         OutputReader = csv.DictReader(
             self.run_output.stdout.decode("UTF-8").split("\n"), delimiter=","
         )
-        return [dict(x) for x in OutputReader]
+        return [preprocess(x) for x in OutputReader]
 
 
 def upload_to_mongodb(address, port, username, password, db_name, collection, data):
+    
     logger = logging.getLogger("mongodb")
     client = MongoClient(address, int(port), username=username, password=password)
     with client:
@@ -382,8 +385,8 @@ This parameter sets configuration of benchmarking process. Input structure is sp
     benchmark = DB_bench(config["db_bench"], pmemkv)
 
     benchmark.build()
-    emon = Emon()
     for test_case in bench_params:
+        emon = Emon()
         logger.info(f"Running: {test_case}")
         if test_case.get("emon"):
             emon.start()
@@ -397,8 +400,8 @@ This parameter sets configuration of benchmarking process. Input structure is sp
         report["runtime_parameters"] = test_case
         report["results"] = benchmark_results
         if test_case.get("emon"):
-            report["emon"] = { "emon-.dat" : emon.get_emon_v(), 
-                                "emon.dat" : emon.get_data()}
+            report["emon"] = { "emon-v" : emon.get_emon_v(), 
+                                "emon-dat" : emon.get_data()}
 
         print_results(report)
         if (
