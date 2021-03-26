@@ -14,14 +14,15 @@ import logging
 import sys
 from importlib import util as import_util
 from jsonschema import validate
+import tempfile
 
 from pymongo import MongoClient
 import pymongo.errors
 
 logger = logging.getLogger(__name__)
-sys.excepthook = lambda ex_type, ex, traceback: logger.error(
-    f"{ex_type.__name__}: {ex}"
-)
+#sys.excepthook = lambda ex_type, ex, traceback: logger.error(
+#    f"{ex_type.__name__}: {ex}"
+#)
 
 
 class CmdLine:
@@ -48,22 +49,25 @@ class CmdLine:
 
 class Emon:
     def __init__(self):
+        self.logger = logging.getLogger(type(self).__name__)
         self._emon_process = None
+        self._log = tempfile.TemporaryFile() 
 
     def start(self):
-        cmd = "emon -collect-edp".split()
-        self._emon_process= subprocess.popen(cmd)
+        logger.info("Start emon")
+        cmd = "emon -collect-edp"
+        self._emon_process = subprocess.Popen(cmd, stdout=self._log, shell=True)
 
-    def stop(self):
-        cmd = "emon -stop".split()
-        subprocess.run(
-                cmd,
-                check=True,
-            )
+    def stop(self, timeout=None):
+        logger.info("Stop emon")
+        subprocess.run("emon -stop", shell=True)
+        self._emon_process.wait(timeout=timeout)
 
-    def get_emon_data(self):
+    def get_data(self):
         if self._emon_process:
-            return self._emon_process.communicate()
+            if self._emon_process.poll() != None:
+                self._log.seek(0) 
+                return self._log.read().decode()
         return None
 
     def get_emon_v(self):
@@ -72,11 +76,14 @@ class Emon:
                 cmd,
                 capture_output=True,
                 check=True,
-            )
+                text=True,
+                universal_newlines=True,
+            ).stdout
 
     def __del__(self):
-        self.stop()
-
+        if self._emon_process.poll() == None:
+            self.stop(60)
+        
 
 class Repository:
     def __init__(self, config: dict):
@@ -385,12 +392,13 @@ This parameter sets configuration of benchmarking process. Input structure is sp
             emon.stop()
         benchmark.cleanup(test_case["pmemkv_bench"])
         benchmark_results = benchmark.get_results()
-        if test_case.get("emon"):
-            benchmark_results["emon"] = { "emon.dat" = emon.get_emon_data(), "emon-v.dat" = emon.get_emon_v())}
         report = {}
         report["build_configuration"] = config
         report["runtime_parameters"] = test_case
         report["results"] = benchmark_results
+        if test_case.get("emon"):
+            report["emon"] = { "emon-.dat" : emon.get_emon_v(), 
+                                "emon.dat" : emon.get_data()}
 
         print_results(report)
         if (
