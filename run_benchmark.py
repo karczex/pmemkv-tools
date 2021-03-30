@@ -19,6 +19,11 @@ import tempfile
 from pymongo import MongoClient
 import pymongo.errors
 
+import zlib
+import base64
+import gridfs
+import datetime
+
 logger = logging.getLogger(__name__)
 #sys.excepthook = lambda ex_type, ex, traceback: logger.error(
 #    f"{ex_type.__name__}: {ex}"
@@ -63,6 +68,23 @@ class Emon:
         subprocess.run("emon -stop", shell=True)
         self._emon_process.wait(timeout=timeout)
 
+    def postprocess_data(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:  
+            with open(os.path.join(tmp_dir, "emon.dat"), "w+") as f:
+                f.write(self.get_data())
+            with open(os.path.join(tmp_dir, "emon-v.dat"), "w+") as f:
+                f.write(self.get_emon_v())
+            cmd = "emon -process-pyedp /opt/intel/sep_private_5.24_linux_0219170677e3a80/config/edp/pyedp_config.txt".split()
+            self.logger.info(f"{cmd=}")
+            subprocess.run(
+                cmd,
+                check=True,
+                cwd = tmp_dir,
+            )
+            with open(os.path.join(tmp_dir,"emon_pyedp_system_view_summary.csv")) as f:
+                OutputReader = csv.DictReader(f.read().split("\n"), delimiter=",")
+                return list(OutputReader)
+
     def get_data(self):
         if self._emon_process:
             if self._emon_process.poll() != None:
@@ -81,8 +103,9 @@ class Emon:
             ).stdout
 
     def __del__(self):
-        if self._emon_process.poll() == None:
-            self.stop(60)
+        if self._emon_process != None:
+            if self._emon_process.poll() == None:
+                self.stop(60)
         
 
 class Repository:
@@ -250,14 +273,23 @@ def upload_to_mongodb(address, port, username, password, db_name, collection, da
     client = MongoClient(address, int(port), username=username, password=password)
     with client:
         db = client[db_name]
+        #fs = gridfs.GridFS(db, collection=collection)
         collection = db[collection]
         result = collection.insert_one(data)
-        logger.info(f"Inserted: {result.inserted_id} into {address}:{port}/{db_name}")
-
+        #fs.put(json.dumps(data, indent=4), encoding='utf-8')
+        #logger.info(f"Inserted: into {address}:{port}/{db_name}")
+        
 
 def print_results(results_dict):
     print(json.dumps(results_dict, indent=4, sort_keys=True))
 
+def save_results(results_dict):
+    basename = "pmemkv_bench_results"
+    suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+    filename = "_".join([basename, suffix, ".json"])
+    output_file = os.path.join("results", filename)
+    with open(output_file, 'w') as outfile:
+        json.dump(results_dict, outfile, indent=4, sort_keys=True)
 
 def load_scenarios(path, schema_path=None):
     bench_params = None
@@ -400,10 +432,9 @@ This parameter sets configuration of benchmarking process. Input structure is sp
         report["runtime_parameters"] = test_case
         report["results"] = benchmark_results
         if test_case.get("emon"):
-            report["emon"] = { "emon-v" : emon.get_emon_v(), 
-                                "emon-dat" : emon.get_data()}
-
+            report["emon"] = emon.postprocess_data()
         print_results(report)
+        save_results(report)
         if (
             db_address
             and db_port
