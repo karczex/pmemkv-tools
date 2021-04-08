@@ -12,18 +12,14 @@ import itertools
 import os
 
 benchmarks = [
-    "fillseq",
-    "fillrandom",
-    "fillseq,readrandom,readrandom",
-    "fillrandom,readrandom,readrandom",
-    "fillseq,readseq,readseq",
-    "fillrandom,readseq,readseq",
+    "fillrandom,readrandom",
+    "fillseq,readseq",
     "fillseq,readwhilewriting",
     "fillseq,readrandomwriterandom",
 ]
 key_size = [8]
 value_size = [8, 128, 1024]
-number_of_elements = 100000000
+number_of_elements = 10000000
 
 
 def concurrent_engines():
@@ -46,10 +42,15 @@ def robinhood_engine():
 
 
 def single_threaded_engines():
+    benchmarks_sth = [
+        "fillrandom,readrandom",
+        "fillseq,readseq",
+    ]
+
     number_of_threads = [1]
     engine = ["radix", "stree"]
     result = itertools.product(
-        benchmarks, key_size, value_size, number_of_threads, engine
+        benchmarks_sth, key_size, value_size, number_of_threads, engine
     )
     return list(result)
 
@@ -78,6 +79,7 @@ def generate():
             "numactl": {
                 "--cpubind": f"file:{os.path.dirname(db_path)}",
             },
+            "emon": "True",
         }
 
         benchmarks_configuration.append(benchmark_settings)

@@ -12,22 +12,19 @@ import itertools
 import os
 
 benchmarks = [
-    "fillseq",
-    "fillrandom",
-    "fillseq,readrandom,readrandom",
-    "fillrandom,readrandom,readrandom",
-    "fillseq,readseq,readseq",
-    "fillrandom,readseq,readseq",
+    "fillrandom,readrandom",
+    "fillseq,readseq",
     "fillseq,readwhilewriting",
     "fillseq,readrandomwriterandom",
 ]
+
+
 key_size = [8]
 value_size = [8, 128, 1024]
-number_of_elements = 1000000
+number_of_elements = 100000000
 
 
 def concurrent_engines():
-
     number_of_threads = [1, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56]
     engine = ["vcmap"]
 
@@ -69,6 +66,7 @@ def generate():
             "numactl": {
                 "--cpubind": f"file:{os.path.dirname(db_path)}",
             },
+            "emon": "True",
         }
 
         benchmarks_configuration.append(benchmark_settings)

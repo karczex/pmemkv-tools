@@ -7,6 +7,7 @@ import os, sys
 import pytest
 import json
 import tempfile
+import time
 
 tests_path = os.path.dirname(os.path.realpath(__file__))
 project_path = os.path.dirname(tests_path)
